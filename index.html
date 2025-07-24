@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KonumGÖNDER - Leaflet ile</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #f0f0f0;
+      --fg: #111;
+      --accent: #3a86ff;
+    }
+
+    body.dark {
+      --bg: #001f3f;
+      --fg: #f4f4f4;
+      --accent: #ffbe0b;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 1rem;
+      min-height: 100vh;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+    }
+
+    #warning {
+      background: #ffc107;
+      color: #000;
+      padding: 10px;
+      margin-bottom: 1rem;
+      border-radius: 6px;
+      max-width: 600px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    #map {
+      width: 100%;
+      max-width: 600px;
+      height: 300px;
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    #link, #address, #qrcode {
+      margin: 0.5rem 0;
+      word-break: break-word;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    button {
+      background-color: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      font-size: 1rem;
+      margin: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #285dff;
+    }
+
+    .switch {
+      margin-top: 1rem;
+      cursor: pointer;
+      color: var(--accent);
+      user-select: none;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div id="warning">
+    🔒 Lütfen telefonunuzun konum servisini açın, aksi halde site çalışmaz.
+  </div>
+
+  <h1>KonumGÖNDER™ (Leaflet)</h1>
+  <div id="address">Konum alınıyor...</div>
+  <div id="map"></div>
+  <div id="link"></div>
+  <canvas id="qrcode"></canvas>
+
+  <button id="saveBtn">Konumu Kaydet</button>
+  <button id="trackBtn">Gerçek Zamanlı Takip</button>
+  <div class="switch" id="themeToggle">Tema Değiştir (Açık/Karanlık)</div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- QRCode JS -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <script>
+    let map, marker, currentPosition;
+
+    function showPosition(pos) {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      currentPosition = { lat, lng };
+
+      if (!map) {
+        map = L.map("map").setView([lat, lng], 15);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors',
+        }).addTo(map);
+        marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+        marker.on('dragend', () => {
+          const pos = marker.getLatLng();
+          currentPosition = { lat: pos.lat, lng: pos.lng };
+          updateUI();
+        });
+      } else {
+        map.setView([lat, lng], 15);
+        marker.setLatLng([lat, lng]);
+      }
+
+      updateUI();
+    }
+
+    function updateUI() {
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${currentPosition.lat}&lon=${currentPosition.lng}`)
+        .then((res) => res.json())
+        .then((data) => {
+          const addr = data.display_name || "Adres bulunamadı";
+          document.getElementById("address").textContent = addr;
+        })
+        .catch(() => {
+          document.getElementById("address").textContent = "Adres alınamadı";
+        });
+
+      const link = `https://www.openstreetmap.org/?mlat=${currentPosition.lat}&mlon=${currentPosition.lng}#map=18/${currentPosition.lat}/${currentPosition.lng}`;
+      document.getElementById("link").innerHTML = `<a href="${link}" target="_blank">Konumu Haritada Gör</a>`;
+      QRCode.toCanvas(document.getElementById("qrcode"), link, { width: 150 });
+    }
+
+    function saveLocation() {
+      const user = prompt("Kullanıcı adı gir (örnek: player1):");
+      if (!user || !currentPosition) return alert("Konum alınamadı veya kullanıcı adı boş.");
+      const link = `${location.origin}${location.pathname}?user=${encodeURIComponent(user)}&lat=${currentPosition.lat}&lng=${currentPosition.lng}`;
+      prompt("Bu bağlantıyı paylaş:", link);
+    }
+
+    function startTracking() {
+      if (!navigator.geolocation) return alert("Konum desteklenmiyor.");
+      navigator.geolocation.watchPosition((pos) => {
+        showPosition(pos);
+      });
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle("dark");
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (params.has("lat") && params.has("lng")) {
+      const lat = parseFloat(params.get("lat"));
+      const lng = parseFloat(params.get("lng"));
+      currentPosition = { lat, lng };
+      if (!map) {
+        map = L.map("map").setView([lat, lng], 15);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors',
+        }).addTo(map);
+        marker = L.marker([lat, lng]).addTo(map);
+      } else {
+        map.setView([lat, lng], 15);
+        marker.setLatLng([lat, lng]);
+      }
+      updateUI();
+    } else {
+      navigator.geolocation.getCurrentPosition(showPosition, () => {
+        alert("Konum erişimi reddedildi veya bulunamadı.");
+        document.getElementById("address").textContent = "Konum alınamadı.";
+      });
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", saveLocation);
+    document.getElementById("trackBtn").addEventListener("click", startTracking);
+    document.getElementById("themeToggle").addEventListener("click", toggleTheme);
+  </script>
+</body>
+</html>
